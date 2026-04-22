@@ -2,6 +2,8 @@
 
 A user-friendly web form that walks a declarant through the minimum information needed to produce a valid [Beneficial Ownership Data Standard (BODS)](https://standard.openownership.org/en/0.4.0/) v0.4 publication: one entity statement plus one person statement and one ownership-or-control statement for each beneficial owner declared.
 
+**Live demo: [bods-forms.onrender.com](https://bods-forms.onrender.com/)**
+
 ![BODS](https://img.shields.io/badge/BODS-0.4.0-652eb1) ![React](https://img.shields.io/badge/React-19-61dafb) ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6) ![License](https://img.shields.io/badge/License-MIT-green)
 
 ## Features
@@ -52,9 +54,9 @@ npm run preview
 
 ### Deploy to Render (free static hosting)
 
-A [`render.yaml`](render.yaml) Blueprint is included. In Render:
+This repo ships with a [`render.yaml`](render.yaml) Blueprint. The live demo at **[bods-forms.onrender.com](https://bods-forms.onrender.com/)** is deployed from it. To deploy your own copy:
 
-1. **New → Blueprint** and connect this repo; Render reads `render.yaml` and provisions a free static site.
+1. **New → Blueprint** in Render and connect your fork; Render reads `render.yaml` and provisions a free static site.
 2. Build command `npm ci && npm run build` publishes `./dist`; a SPA rewrite rule serves `/index.html` for all non-asset paths.
 3. **(Optional) Live validation** — by default the hosted site shows "Validator unreachable" because there's no validator. To enable validation, deploy a [bods-validator](https://github.com/StephenAbbott/bods-validator) instance somewhere and set the `VITE_VALIDATOR_URL` env var in Render to its public validate endpoint (e.g. `https://your-validator.example.com/api/validate`). This is a build-time var so Render will rebuild on change.
 
