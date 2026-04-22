@@ -17,7 +17,11 @@ interface Props {
   statements: Statement[];
 }
 
-const VALIDATOR_PATH = "/api/validate";
+// In dev, Vite proxies /api/validate to the local validator. In production
+// (e.g. Render static site), set VITE_VALIDATOR_URL at build time to a hosted
+// bods-validator instance. Leave it unset to hide the live-validation feature
+// and fall back to showing "Validator unreachable".
+const VALIDATOR_PATH = import.meta.env.VITE_VALIDATOR_URL || "/api/validate";
 
 function debounce<A extends unknown[]>(fn: (...args: A) => void, wait: number) {
   let t: ReturnType<typeof setTimeout> | undefined;

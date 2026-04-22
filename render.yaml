@@ -1,0 +1,43 @@
+# Render Blueprint — deploys bods-forms as a free static site.
+#
+# Getting started:
+#   1. Push this repo to GitHub (done).
+#   2. In Render: New → Blueprint → connect this repo. Render reads this file
+#      and provisions the service.
+#   3. (Optional) To wire up live BODS schema validation, deploy a
+#      bods-validator instance somewhere (e.g. as a separate Render web
+#      service) and set the VITE_VALIDATOR_URL env var below to its public
+#      URL. Without it, the live-preview panel will show "Validator
+#      unreachable" but the form itself (including the JSON download and
+#      BOVS diagram) still works.
+#
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: bods-forms
+    runtime: static
+    plan: free
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    pullRequestPreviewsEnabled: true
+    envVars:
+      # Uncomment and set to a hosted bods-validator URL to enable live
+      # validation. Must include the full path, e.g.
+      #   https://your-bods-validator.onrender.com/api/validate
+      # - key: VITE_VALIDATOR_URL
+      #   value: https://example.com/api/validate
+      - key: NODE_VERSION
+        value: "20"
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+    routes:
+      # SPA fallback: anything that isn't a real asset serves index.html so
+      # client-side navigation works on reload.
+      - type: rewrite
+        source: /*
+        destination: /index.html

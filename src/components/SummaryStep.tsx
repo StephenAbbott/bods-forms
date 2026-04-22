@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import type { FormState } from "../bods/assembler";
-import { buildDeclaration, buildStatements } from "../bods/assembler";
+import type { BeneficialOwner, FormState } from "../bods/assembler";
+import { buildStatements } from "../bods/assembler";
 import VisualisationPanel from "./VisualisationPanel";
 
 interface Props {
@@ -43,11 +43,71 @@ function fmtList(arr: Array<Record<string, string>> | undefined, renderItem: (it
   return arr.map(renderItem).filter(Boolean).join("; ");
 }
 
+function sharePct(bo: BeneficialOwner): string {
+  if (bo.sharePercentageExact) return `${bo.sharePercentageExact}%`;
+  if (bo.sharePercentageMin || bo.sharePercentageMax) {
+    return `${bo.sharePercentageMin ?? "?"}–${bo.sharePercentageMax ?? "?"}%`;
+  }
+  return "";
+}
+
+function BeneficialOwnerSummary({ bo, index, onEdit }: { bo: BeneficialOwner; index: number; onEdit: () => void }) {
+  const title = [bo.givenName, bo.familyName].filter(Boolean).join(" ") || `Beneficial owner ${index + 1}`;
+  return (
+    <div style={{ marginTop: 20 }}>
+      <h3 style={{ fontSize: 18, margin: "0 0 10px" }}>{title}</h3>
+      <dl className="summary-list">
+        <Row
+          label="Name"
+          value={[bo.givenName, bo.familyName].filter(Boolean).join(" ")}
+          onEdit={onEdit}
+        />
+        <Row
+          label="Other names"
+          value={fmtList(bo.alternateNames as Record<string, string>[] | undefined, (i) => i.fullName ?? "")}
+          onEdit={onEdit}
+        />
+        <Row
+          label="Date of birth"
+          value={[bo.birthYear, bo.birthMonth, bo.birthDay].filter(Boolean).join("-")}
+          onEdit={onEdit}
+        />
+        <Row
+          label="Nationalities"
+          value={fmtList(bo.nationalities as Record<string, string>[] | undefined, (i) => i.code ?? i.name ?? "")}
+          onEdit={onEdit}
+        />
+        <Row
+          label="Tax residencies"
+          value={fmtList(bo.taxResidencies as Record<string, string>[] | undefined, (i) => i.code ?? i.name ?? "")}
+          onEdit={onEdit}
+        />
+        <Row
+          label="Identifiers"
+          value={fmtList(bo.identifiers as Record<string, string>[] | undefined, (i) =>
+            [i.scheme, i.id].filter(Boolean).join(" ")
+          )}
+          onEdit={onEdit}
+        />
+        <Row
+          label="Service address"
+          value={[bo.serviceAddress, bo.serviceAddressCountry].filter(Boolean).join(", ")}
+          onEdit={onEdit}
+        />
+        <Row label="PEP status" value={bo.pepStatus} onEdit={onEdit} />
+        <Row label="Nature of interest" value={(bo.interestTypes ?? []).join(", ")} onEdit={onEdit} />
+        <Row label="Direct or indirect" value={bo.directOrIndirect} onEdit={onEdit} />
+        <Row label="Share percentage" value={sharePct(bo)} onEdit={onEdit} />
+        <Row label="Start date" value={bo.interestStartDate} onEdit={onEdit} />
+      </dl>
+    </div>
+  );
+}
+
 export default function SummaryStep({ state, declarationId, onBack, onEdit, onReset }: Props) {
-  const declaration = useMemo(() => buildDeclaration(state, declarationId), [state, declarationId]);
   const statements = useMemo(() => buildStatements(state, declarationId), [state, declarationId]);
-  const json = useMemo(() => JSON.stringify(declaration, null, 2), [declaration]);
-  const statementsJson = useMemo(() => JSON.stringify(statements, null, 2), [statements]);
+  const json = useMemo(() => JSON.stringify(statements, null, 2), [statements]);
+  const owners = state.beneficialOwners ?? [];
 
   const download = (filename: string, content: string) => {
     const blob = new Blob([content], { type: "application/json" });
@@ -90,69 +150,16 @@ export default function SummaryStep({ state, declarationId, onBack, onEdit, onRe
         />
       </dl>
 
-      <h2 style={{ fontSize: 22, marginTop: 30 }}>Beneficial owner</h2>
-      <dl className="summary-list">
-        <Row
-          label="Name"
-          value={[state.personGivenName, state.personFamilyName].filter(Boolean).join(" ")}
-          onEdit={() => onEdit(1)}
-        />
-        <Row
-          label="Other names"
-          value={fmtList(state.personAlternateNames as Record<string, string>[] | undefined, (i) => i.fullName ?? "")}
-          onEdit={() => onEdit(1)}
-        />
-        <Row
-          label="Date of birth"
-          value={[state.personBirthYear, state.personBirthMonth, state.personBirthDay].filter(Boolean).join("-")}
-          onEdit={() => onEdit(1)}
-        />
-        <Row
-          label="Nationalities"
-          value={fmtList(state.personNationalities as Record<string, string>[] | undefined, (i) => i.code ?? i.name ?? "")}
-          onEdit={() => onEdit(1)}
-        />
-        <Row
-          label="Tax residencies"
-          value={fmtList(state.personTaxResidencies as Record<string, string>[] | undefined, (i) => i.code ?? i.name ?? "")}
-          onEdit={() => onEdit(1)}
-        />
-        <Row
-          label="Identifiers"
-          value={fmtList(state.personIdentifiers as Record<string, string>[] | undefined, (i) =>
-            [i.scheme, i.id].filter(Boolean).join(" ")
-          )}
-          onEdit={() => onEdit(1)}
-        />
-        <Row
-          label="Service address"
-          value={[state.personServiceAddress, state.personServiceAddressCountry].filter(Boolean).join(", ")}
-          onEdit={() => onEdit(1)}
-        />
-        <Row label="PEP status" value={state.personPepStatus} onEdit={() => onEdit(1)} />
-      </dl>
-
-      <h2 style={{ fontSize: 22, marginTop: 30 }}>Relationship</h2>
-      <dl className="summary-list">
-        <Row
-          label="Nature of interest"
-          value={(state.interestTypes ?? []).join(", ")}
-          onEdit={() => onEdit(2)}
-        />
-        <Row label="Direct or indirect" value={state.directOrIndirect} onEdit={() => onEdit(2)} />
-        <Row
-          label="Share percentage"
-          value={
-            state.sharePercentageExact
-              ? `${state.sharePercentageExact}%`
-              : state.sharePercentageMin || state.sharePercentageMax
-                ? `${state.sharePercentageMin ?? "?"}–${state.sharePercentageMax ?? "?"}%`
-                : ""
-          }
-          onEdit={() => onEdit(2)}
-        />
-        <Row label="Start date" value={state.interestStartDate} onEdit={() => onEdit(2)} />
-      </dl>
+      <h2 style={{ fontSize: 22, marginTop: 30 }}>
+        Beneficial owners {owners.length > 0 ? `(${owners.length})` : ""}
+      </h2>
+      {owners.length === 0 ? (
+        <p className="field-hint">No beneficial owners added.</p>
+      ) : (
+        owners.map((bo, idx) => (
+          <BeneficialOwnerSummary key={idx} bo={bo} index={idx} onEdit={() => onEdit(1)} />
+        ))
+      )}
 
       <VisualisationPanel data={statements} />
 
@@ -162,14 +169,7 @@ export default function SummaryStep({ state, declarationId, onBack, onEdit, onRe
           className="btn btn--primary"
           onClick={() => download(`bods-declaration-${declarationId.slice(0, 8)}.json`, json)}
         >
-          Download declaration (BODS 0.4)
-        </button>
-        <button
-          type="button"
-          className="btn btn--secondary"
-          onClick={() => download(`bods-statements-${declarationId.slice(0, 8)}.json`, statementsJson)}
-        >
-          Download statements only
+          Download BODS 0.4 JSON
         </button>
         <button type="button" className="btn btn--secondary" onClick={onReset}>
           Start again

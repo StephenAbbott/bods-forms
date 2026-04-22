@@ -1,16 +1,16 @@
 # BODS Forms — Beneficial Ownership Declaration
 
-A user-friendly web form that walks a declarant through the minimum information needed to produce a valid [Beneficial Ownership Data Standard (BODS)](https://standard.openownership.org/en/0.4.0/) v0.4 publication: one entity statement, one natural-person statement, and one ownership-or-control statement linking them.
+A user-friendly web form that walks a declarant through the minimum information needed to produce a valid [Beneficial Ownership Data Standard (BODS)](https://standard.openownership.org/en/0.4.0/) v0.4 publication: one entity statement plus one person statement and one ownership-or-control statement for each beneficial owner declared.
 
 ![BODS](https://img.shields.io/badge/BODS-0.4.0-652eb1) ![React](https://img.shields.io/badge/React-19-61dafb) ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6) ![License](https://img.shields.io/badge/License-MIT-green)
 
 ## Features
 
-- **Three-step declaration flow** — Entity → Beneficial owner → Relationship, with a check-your-answers summary step.
+- **Two-step declaration flow** — Entity → Beneficial owners, with a check-your-answers summary step.
+- **Multiple beneficial owners** — Add any number of natural people; each card captures identity and ownership/control details, producing a person statement plus a relationship statement per person.
 - **Live BODS preview** — As the user fills in the form, a sidebar shows the BODS 0.4 JSON being produced and validates it live against the BODS schema via [bods-validator](https://github.com/StephenAbbott/bods-validator) (lib-cove-bods).
-- **BODS field hints** — Every form field shows which BODS property it populates (e.g. `entityType.type`, `identifiers[]`, `interests[].type`), making the schema concrete for declarants and regulators.
 - **BOVS ownership diagram** — On the summary step, the declaration is rendered as an ownership diagram using [@openownership/bods-dagre](https://github.com/openownership/visualisation-tool), implementing the [Beneficial Ownership Visualisation System (BOVS)](https://www.openownership.org/en/publications/beneficial-ownership-visualisation-system/).
-- **JSON download** — Download the full BODS 0.4 declaration (all three statements plus a declaration record) or just the statements array.
+- **JSON download** — Download the full BODS 0.4 publication as a single JSON file.
 - **Repeater fields** — Capture multiple identifiers, nationalities, and tax residencies, as recommended by FATF and by Open Ownership's form-design guidance.
 - **GOV.UK Design System patterns** — Accessible, progressive, one-thing-per-page form UX, inspired by [XGovFormBuilder](https://github.com/XGovFormBuilder/digital-form-builder) and the [GOV.UK Design System](https://design-system.service.gov.uk/).
 - **Session-only storage** — Nothing is sent anywhere except the local BODS validator. Form state lives in the browser's `sessionStorage` and is discarded on reset.
@@ -49,6 +49,16 @@ This builds bods-validator from the sibling `../bods-validator` checkout, then s
 npm run build
 npm run preview
 ```
+
+### Deploy to Render (free static hosting)
+
+A [`render.yaml`](render.yaml) Blueprint is included. In Render:
+
+1. **New → Blueprint** and connect this repo; Render reads `render.yaml` and provisions a free static site.
+2. Build command `npm ci && npm run build` publishes `./dist`; a SPA rewrite rule serves `/index.html` for all non-asset paths.
+3. **(Optional) Live validation** — by default the hosted site shows "Validator unreachable" because there's no validator. To enable validation, deploy a [bods-validator](https://github.com/StephenAbbott/bods-validator) instance somewhere and set the `VITE_VALIDATOR_URL` env var in Render to its public validate endpoint (e.g. `https://your-validator.example.com/api/validate`). This is a build-time var so Render will rebuild on change.
+
+The form itself (step flow, JSON download, BOVS diagram) works without a validator — validation is additive.
 
 ## Architecture
 

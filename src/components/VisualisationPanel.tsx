@@ -42,6 +42,41 @@ const ARROW_MARKERS = [
   { id: "arrow-unknown-blackFull", d: "M 0 10 L 10 5 L 0 0 z", fill: "#000", refY: 5 },
 ];
 
+function fixTransform(svg: SVGSVGElement, container: HTMLDivElement) {
+  const rootG = svg.querySelector("g");
+  if (!rootG) return;
+  const transform = rootG.getAttribute("transform") || "";
+  if (!transform.includes("scale(0)")) return;
+
+  // bods-dagre's d3 transition sometimes aborts (e.g. when the properties
+  // panel throws), leaving scale(0) in place. Reconstruct a viewport from
+  // the node positions.
+  const nodes = svg.querySelectorAll("g.node");
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  nodes.forEach((n) => {
+    const t = n.getAttribute("transform") || "";
+    const m = t.match(/translate\(([\d.-]+)\s*,\s*([\d.-]+)\)/);
+    if (m) {
+      const x = parseFloat(m[1]);
+      const y = parseFloat(m[2]);
+      minX = Math.min(minX, x - 100);
+      minY = Math.min(minY, y - 80);
+      maxX = Math.max(maxX, x + 100);
+      maxY = Math.max(maxY, y + 80);
+    }
+  });
+  const w = maxX - minX || 400;
+  const h = maxY - minY || 300;
+  const containerW = container.offsetWidth || 600;
+  const scale = Math.min(containerW / w, 500 / h, 1.2);
+  const tx = (containerW - w * scale) / 2 - minX * scale;
+  const ty = 30 - minY * scale;
+  rootG.setAttribute("transform", `translate(${tx},${ty}) scale(${scale})`);
+  svg.setAttribute("width", String(containerW));
+  svg.setAttribute("height", String(h * scale + 60));
+  container.style.minHeight = `${h * scale + 60}px`;
+}
+
 function ensureArrowMarkers(svg: SVGSVGElement) {
   let defs = svg.querySelector("defs");
   if (!defs) {
@@ -106,10 +141,18 @@ export default function VisualisationPanel({ data }: Props) {
       if (!svg || svg.querySelectorAll("g.node").length === 0) {
         throw new Error("No ownership graph could be rendered from this data.");
       }
-      ensureArrowMarkers(svg);
-      svg.querySelectorAll("g.edgePath").forEach((edge) => {
-        (edge as SVGGElement).style.opacity = "1";
-      });
+      const applyFixes = () => {
+        const s = containerRef.current?.querySelector("svg") as SVGSVGElement | null;
+        if (!s) return;
+        ensureArrowMarkers(s);
+        fixTransform(s, containerRef.current!);
+        s.querySelectorAll("g.edgePath").forEach((edge) => {
+          (edge as SVGGElement).style.opacity = "1";
+        });
+      };
+      applyFixes();
+      setTimeout(applyFixes, 300);
+      setTimeout(applyFixes, 600);
       setRendered(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to render visualisation");

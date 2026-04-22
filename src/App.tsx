@@ -15,8 +15,24 @@ function validateStep(stepIndex: number, state: Record<string, unknown>): Record
   const errs: Record<string, string> = {};
   const step = declarationForm.steps[stepIndex];
   for (const c of step.components) {
-    if (!c.required) continue;
     if (c.type === "paragraph") continue;
+    if (c.type === "beneficial-owners") {
+      const owners = (state[c.name] as Array<Record<string, unknown>> | undefined) ?? [];
+      if (c.required && owners.length === 0) {
+        errs[c.name] = "Add at least one beneficial owner.";
+        continue;
+      }
+      owners.forEach((bo, i) => {
+        if (!bo.givenName) errs[`beneficialOwners[${i}].givenName`] = "Given name is required";
+        if (!bo.familyName) errs[`beneficialOwners[${i}].familyName`] = "Family name is required";
+        const interests = bo.interestTypes as unknown[] | undefined;
+        if (!interests || interests.length === 0) {
+          errs[`beneficialOwners[${i}].interestTypes`] = "Select at least one type of interest";
+        }
+      });
+      continue;
+    }
+    if (!c.required) continue;
     const v = state[c.name];
     if (v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0)) {
       errs[c.name] = `${c.title ?? c.name} is required`;
@@ -171,13 +187,15 @@ function Landing({ onStart }: { onStart: () => void }) {
         <a href="https://standard.openownership.org/en/0.4.0/" target="_blank" rel="noreferrer">
           Beneficial Ownership Data Standard (BODS) v0.4
         </a>{" "}
-        publication describing one entity, one natural-person beneficial owner, and the relationship between them.
+        publication describing one entity and one or more natural-person beneficial owners.
       </p>
       <p>You will:</p>
       <ol>
         <li>Tell us about the entity (produces the entity statement).</li>
-        <li>Tell us about the beneficial owner (produces the person statement).</li>
-        <li>Describe the relationship (produces the ownership-or-control statement).</li>
+        <li>
+          Add one or more beneficial owners — for each person, their identity and how they own or control the entity
+          (produces a person statement and an ownership-or-control statement per person).
+        </li>
       </ol>
       <p>
         As you fill in the form a live BODS preview appears next to it, validated against the BODS 0.4 schema.

@@ -1,6 +1,7 @@
 /**
  * Assembles flat form state into a BODS v0.4 publication — one entity statement,
- * one person statement, one ownership-or-control statement linking them.
+ * plus one person statement and one relationship statement per beneficial owner
+ * declared in the form. Emits wire-format BODS 0.4 (recordType + recordDetails).
  *
  * This file is the single source of truth for how the form's field names map to
  * BODS fields. When adding a new field to the form definition, update this file.
@@ -8,7 +9,6 @@
 
 import { v5 as uuidv5 } from "uuid";
 import type {
-  DeclarationRecord,
   EntityStatement,
   EntityTypeValue,
   EntitySubtype,
@@ -16,15 +16,38 @@ import type {
   Interest,
   InterestType,
   Nationality,
-  OwnershipOrControlStatement,
   PersonStatement,
+  PublicationDetails,
+  RelationshipStatement,
   Statement,
   TaxResidency,
 } from "./types";
 
-// Stable namespace for deterministic UUIDv5 statement IDs — same form state yields
-// the same IDs, which makes diffing and live preview cleaner.
+// Stable namespace for deterministic UUIDv5 IDs — same form state yields the
+// same IDs, so live-preview diffs are stable.
 const NS = "a6b69e28-4fa3-4a9f-b19f-8a6f3b8f9a5e";
+
+export interface BeneficialOwner {
+  givenName?: string;
+  familyName?: string;
+  alternateNames?: Array<{ fullName?: string }>;
+  birthYear?: string;
+  birthMonth?: string;
+  birthDay?: string;
+  nationalities?: Array<{ code?: string; name?: string }>;
+  taxResidencies?: Array<{ code?: string; name?: string }>;
+  identifiers?: Array<{ scheme?: string; id?: string; schemeName?: string }>;
+  serviceAddress?: string;
+  serviceAddressCountry?: string;
+  pepStatus?: "isPep" | "isNotPep" | "unknownPep";
+
+  interestTypes?: InterestType[];
+  sharePercentageMin?: string;
+  sharePercentageMax?: string;
+  sharePercentageExact?: string;
+  directOrIndirect?: "direct" | "indirect" | "unknown";
+  interestStartDate?: string;
+}
 
 export interface FormState {
   // Entity step
@@ -38,34 +61,12 @@ export interface FormState {
   entityRegisteredAddress?: string;
   entityAddressCountry?: string;
 
-  // Person step
-  personGivenName?: string;
-  personFamilyName?: string;
-  personAlternateNames?: Array<{ fullName?: string }>;
-  personBirthYear?: string;
-  personBirthMonth?: string;
-  personBirthDay?: string;
-  personNationalities?: Array<{ code?: string; name?: string }>;
-  personTaxResidencies?: Array<{ code?: string; name?: string }>;
-  personIdentifiers?: Array<{ scheme?: string; id?: string; schemeName?: string }>;
-  personServiceAddress?: string;
-  personServiceAddressCountry?: string;
-  personPepStatus?: "isPep" | "isNotPep" | "unknownPep";
-
-  // Relationship step
-  interestTypes?: InterestType[];
-  sharePercentageMin?: string;
-  sharePercentageMax?: string;
-  sharePercentageExact?: string;
-  directOrIndirect?: "direct" | "indirect" | "unknown";
-  interestStartDate?: string;
+  // Beneficial owners (one person + relationship statement each)
+  beneficialOwners?: BeneficialOwner[];
 }
 
-const statementId = (kind: string, name: string | undefined) =>
-  uuidv5(`${kind}::${name ?? "unnamed"}`, NS);
-
-const recordId = (kind: string, name: string | undefined) =>
-  uuidv5(`record::${kind}::${name ?? "unnamed"}`, NS);
+const idFor = (kind: string, key: string | undefined) =>
+  uuidv5(`${kind}::${key ?? "unnamed"}`, NS);
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -74,20 +75,53 @@ function nonEmpty<T>(arr: T[] | undefined): T[] | undefined {
   return arr;
 }
 
-function assembleBirthDate(state: FormState): string | undefined {
-  const y = state.personBirthYear?.trim();
-  const m = state.personBirthMonth?.trim().padStart(2, "0");
-  const d = state.personBirthDay?.trim().padStart(2, "0");
+function assembleBirthDate(bo: BeneficialOwner): string | undefined {
+  const y = bo.birthYear?.trim();
+  const m = bo.birthMonth?.trim().padStart(2, "0");
+  const d = bo.birthDay?.trim().padStart(2, "0");
   if (!y) return undefined;
   if (!m) return y;
   if (!d) return `${y}-${m}`;
   return `${y}-${m}-${d}`;
 }
 
-export function buildEntityStatement(state: FormState, declarationId: string): EntityStatement | undefined {
+const publicationDetails: PublicationDetails = {
+  bodsVersion: "0.4",
+  publicationDate: todayIso(),
+  publisher: {
+    name: "bods-forms",
+    url: "https://github.com/StephenAbbott/bods-forms",
+  },
+};
+
+const source = {
+  type: ["selfDeclaration" as const],
+  description: "Data self-declared via bods-forms.",
+};
+
+function entityRecordId(state: FormState): string | undefined {
   if (!state.entityName && !state.entityType) return undefined;
-  const sid = statementId("entity", state.entityName);
-  const rid = recordId("entity", state.entityName);
+  return idFor("entity-record", state.entityName);
+}
+
+function personFullName(bo: BeneficialOwner): string {
+  return [bo.givenName, bo.familyName].filter(Boolean).join(" ");
+}
+
+function personRecordId(bo: BeneficialOwner, index: number): string | undefined {
+  if (!bo.givenName && !bo.familyName) return undefined;
+  // Include the index in the key so two BOs with the same name still get
+  // distinct records.
+  return idFor("person-record", `${index}::${personFullName(bo)}`);
+}
+
+export function buildEntityStatement(
+  state: FormState,
+  declarationSubject: string
+): EntityStatement | undefined {
+  const rid = entityRecordId(state);
+  if (!rid) return undefined;
+
   const identifiers: Identifier[] | undefined = nonEmpty(
     (state.entityIdentifiers ?? [])
       .filter((i) => i.id)
@@ -97,47 +131,58 @@ export function buildEntityStatement(state: FormState, declarationId: string): E
         schemeName: i.schemeName || undefined,
       }))
   );
+
   return {
-    statementId: sid,
-    declarationSubject: declarationId,
+    statementId: idFor("entity-stmt", state.entityName),
+    declarationSubject,
     recordId: rid,
-    recordType: "entityStatement",
+    recordType: "entity",
     recordStatus: "new",
     statementDate: todayIso(),
-    entityType: {
-      type: state.entityType ?? "registeredEntity",
-      subtype: state.entitySubtype,
-    },
-    name: state.entityName,
-    identifiers,
-    jurisdiction:
-      state.entityJurisdictionCode || state.entityJurisdictionName
-        ? {
-            code: state.entityJurisdictionCode || undefined,
-            name: state.entityJurisdictionName || undefined,
-          }
+    publicationDetails,
+    source,
+    recordDetails: {
+      isComponent: false,
+      entityType: {
+        type: state.entityType ?? "registeredEntity",
+        subtype: state.entitySubtype,
+      },
+      name: state.entityName,
+      identifiers,
+      jurisdiction:
+        state.entityJurisdictionCode || state.entityJurisdictionName
+          ? {
+              code: state.entityJurisdictionCode || undefined,
+              name: state.entityJurisdictionName || undefined,
+            }
+          : undefined,
+      foundingDate: state.entityFoundingDate || undefined,
+      addresses: state.entityRegisteredAddress
+        ? [
+            {
+              type: "registered",
+              address: state.entityRegisteredAddress,
+              country: state.entityAddressCountry
+                ? { code: state.entityAddressCountry }
+                : undefined,
+            },
+          ]
         : undefined,
-    foundingDate: state.entityFoundingDate || undefined,
-    addresses: state.entityRegisteredAddress
-      ? [
-          {
-            type: "registered",
-            address: state.entityRegisteredAddress,
-            country: state.entityAddressCountry || undefined,
-          },
-        ]
-      : undefined,
+    },
   };
 }
 
-export function buildPersonStatement(state: FormState, declarationId: string): PersonStatement | undefined {
-  if (!state.personGivenName && !state.personFamilyName) return undefined;
-  const fullName = [state.personGivenName, state.personFamilyName].filter(Boolean).join(" ");
-  const sid = statementId("person", fullName);
-  const rid = recordId("person", fullName);
+export function buildPersonStatement(
+  bo: BeneficialOwner,
+  index: number,
+  declarationSubject: string
+): PersonStatement | undefined {
+  const rid = personRecordId(bo, index);
+  if (!rid) return undefined;
+  const fullName = personFullName(bo);
 
   const identifiers: Identifier[] | undefined = nonEmpty(
-    (state.personIdentifiers ?? [])
+    (bo.identifiers ?? [])
       .filter((i) => i.id)
       .map((i) => ({
         id: i.id!,
@@ -147,136 +192,130 @@ export function buildPersonStatement(state: FormState, declarationId: string): P
   );
 
   const nationalities: Nationality[] | undefined = nonEmpty(
-    (state.personNationalities ?? [])
+    (bo.nationalities ?? [])
       .filter((n) => n.code || n.name)
       .map((n) => ({ code: n.code || undefined, name: n.name || undefined }))
   );
 
   const taxResidencies: TaxResidency[] | undefined = nonEmpty(
-    (state.personTaxResidencies ?? [])
+    (bo.taxResidencies ?? [])
       .filter((t) => t.code || t.name)
       .map((t) => ({ code: t.code || undefined, name: t.name || undefined }))
   );
 
   const alternateNames = nonEmpty(
-    (state.personAlternateNames ?? [])
+    (bo.alternateNames ?? [])
       .filter((n) => n.fullName)
-      .map((n) => ({
-        type: "alias" as const,
-        fullName: n.fullName!,
-      }))
+      .map((n) => ({ type: "alias" as const, fullName: n.fullName! }))
   );
 
   return {
-    statementId: sid,
-    declarationSubject: declarationId,
+    statementId: idFor("person-stmt", `${index}::${fullName}`),
+    declarationSubject,
     recordId: rid,
-    recordType: "personStatement",
+    recordType: "person",
     recordStatus: "new",
     statementDate: todayIso(),
-    personType: "knownPerson",
-    names: [
-      {
-        type: "individual",
-        fullName,
-        givenName: state.personGivenName,
-        familyName: state.personFamilyName,
-      },
-      ...(alternateNames ?? []),
-    ],
-    identifiers,
-    nationalities,
-    taxResidencies,
-    birthDate: assembleBirthDate(state),
-    addresses: state.personServiceAddress
-      ? [
-          {
-            type: "service",
-            address: state.personServiceAddress,
-            country: state.personServiceAddressCountry || undefined,
-          },
-        ]
-      : undefined,
-    pepStatus: state.personPepStatus,
+    publicationDetails,
+    source,
+    recordDetails: {
+      isComponent: false,
+      personType: "knownPerson",
+      names: [
+        {
+          type: "legal",
+          fullName,
+          givenName: bo.givenName,
+          familyName: bo.familyName,
+        },
+        ...(alternateNames ?? []),
+      ],
+      identifiers,
+      nationalities,
+      taxResidencies,
+      birthDate: assembleBirthDate(bo),
+      addresses: bo.serviceAddress
+        ? [
+            {
+              type: "service",
+              address: bo.serviceAddress,
+              country: bo.serviceAddressCountry
+                ? { code: bo.serviceAddressCountry }
+                : undefined,
+            },
+          ]
+        : undefined,
+      pepStatus: bo.pepStatus,
+    },
   };
 }
 
-export function buildOwnershipOrControlStatement(
-  state: FormState,
-  declarationId: string,
+export function buildRelationshipStatement(
+  bo: BeneficialOwner,
+  declarationSubject: string,
   entity: EntityStatement | undefined,
   person: PersonStatement | undefined
-): OwnershipOrControlStatement | undefined {
+): RelationshipStatement | undefined {
   if (!entity || !person) return undefined;
-  if (!state.interestTypes || state.interestTypes.length === 0) return undefined;
-  const sid = statementId("ooc", `${entity.statementId}::${person.statementId}`);
-  const rid = recordId("ooc", `${entity.statementId}::${person.statementId}`);
-  const share =
-    state.sharePercentageExact
-      ? { exact: Number(state.sharePercentageExact) }
-      : state.sharePercentageMin || state.sharePercentageMax
-        ? {
-            minimum: state.sharePercentageMin ? Number(state.sharePercentageMin) : undefined,
-            maximum: state.sharePercentageMax ? Number(state.sharePercentageMax) : undefined,
-          }
-        : undefined;
+  if (!bo.interestTypes || bo.interestTypes.length === 0) return undefined;
 
-  const interests: Interest[] = state.interestTypes.map((t) => ({
+  const key = `${entity.recordId}::${person.recordId}`;
+  const share = bo.sharePercentageExact
+    ? { exact: Number(bo.sharePercentageExact) }
+    : bo.sharePercentageMin || bo.sharePercentageMax
+      ? {
+          minimum: bo.sharePercentageMin ? Number(bo.sharePercentageMin) : undefined,
+          maximum: bo.sharePercentageMax ? Number(bo.sharePercentageMax) : undefined,
+        }
+      : undefined;
+
+  const interests: Interest[] = bo.interestTypes.map((t) => ({
     type: t,
-    directOrIndirect: state.directOrIndirect,
+    directOrIndirect: bo.directOrIndirect,
     beneficialOwnershipOrControl: true,
     share,
-    startDate: state.interestStartDate || undefined,
+    startDate: bo.interestStartDate || undefined,
   }));
 
   return {
-    statementId: sid,
-    declarationSubject: declarationId,
-    recordId: rid,
-    recordType: "ownershipOrControlStatement",
+    statementId: idFor("rel-stmt", key),
+    declarationSubject,
+    recordId: idFor("rel-record", key),
+    recordType: "relationship",
     recordStatus: "new",
     statementDate: todayIso(),
-    subject: { describedByEntityStatement: entity.statementId },
-    interestedParty: { describedByPersonStatement: person.statementId },
-    interests,
+    publicationDetails,
+    source,
+    recordDetails: {
+      isComponent: false,
+      subject: entity.recordId,
+      interestedParty: person.recordId,
+      interests,
+    },
   };
 }
 
 /**
- * Build a partial BODS array from whatever fields are populated so far.
- * Designed to be called on every keystroke for the live preview panel —
- * safe to call at any point in the form's lifecycle.
+ * Build a partial BODS 0.4 publication from whatever fields are populated so far.
+ * Safe to call at any point in the form's lifecycle — filters out statements
+ * whose identity isn't known yet.
+ *
+ * The `declarationId` parameter is kept for API compatibility but is ignored:
+ * `declarationSubject` is derived from the entity's recordId (which is what a
+ * BODS 0.4 declaration is about).
  */
-export function buildStatements(state: FormState, declarationId: string): Statement[] {
-  const entity = buildEntityStatement(state, declarationId);
-  const person = buildPersonStatement(state, declarationId);
-  const ooc = buildOwnershipOrControlStatement(state, declarationId, entity, person);
-  return [entity, person, ooc].filter(Boolean) as Statement[];
-}
-
-/**
- * Wrap emitted statements in a full BODS 0.4 DeclarationRecord for download.
- */
-export function buildDeclaration(state: FormState, declarationId: string): DeclarationRecord {
-  const records = buildStatements(state, declarationId);
-  return {
-    declarationId,
-    statementDate: todayIso(),
-    publicationDetails: {
-      bodsVersion: "0.4",
-      publicationDate: todayIso(),
-      publisher: {
-        name: "bods-forms",
-        url: "https://github.com/StephenAbbott/bods-forms",
-      },
-    },
-    records,
-    source: {
-      type: ["selfDeclaration"],
-      description:
-        "Data self-declared via bods-forms — collected using guided questions and emitted as BODS 0.4.",
-    },
-  };
+export function buildStatements(state: FormState, _declarationId: string): Statement[] {
+  const subjectRecordId = entityRecordId(state) ?? _declarationId;
+  const entity = buildEntityStatement(state, subjectRecordId);
+  const out: Statement[] = [];
+  if (entity) out.push(entity);
+  (state.beneficialOwners ?? []).forEach((bo, idx) => {
+    const person = buildPersonStatement(bo, idx, subjectRecordId);
+    if (person) out.push(person);
+    const rel = buildRelationshipStatement(bo, subjectRecordId, entity, person);
+    if (rel) out.push(rel);
+  });
+  return out;
 }
 
 export function newDeclarationId(): string {

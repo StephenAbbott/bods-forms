@@ -15,7 +15,8 @@ export type ComponentType =
   | "checkboxes"
   | "select"
   | "partial-date"
-  | "repeater";
+  | "repeater"
+  | "beneficial-owners";
 
 export interface Option {
   value: string;
@@ -75,6 +76,12 @@ export interface RepeaterComponent extends BaseComponent {
   components: Component[];
 }
 
+export interface BeneficialOwnersComponent extends BaseComponent {
+  type: "beneficial-owners";
+  addButtonText: string;
+  itemTitle: string;
+}
+
 export type Component =
   | ParagraphComponent
   | TextComponent
@@ -82,7 +89,8 @@ export type Component =
   | CheckboxesComponent
   | SelectComponent
   | PartialDateComponent
-  | RepeaterComponent;
+  | RepeaterComponent
+  | BeneficialOwnersComponent;
 
 export interface Step {
   id: string;

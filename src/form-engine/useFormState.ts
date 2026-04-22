@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FormState } from "../bods/assembler";
 
-const STORAGE_KEY = "bods-forms:state:v1";
+const STORAGE_KEY = "bods-forms:state:v2";
 
 function readInitialState(): FormState {
   try {

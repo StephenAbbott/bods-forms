@@ -1,15 +1,15 @@
 /**
- * BODS v0.4 types — minimum subset needed for this form.
+ * BODS v0.4 wire-format types — minimum subset needed for this form.
  *
- * The full schema lives at https://standard.openownership.org/en/0.4.0/standard/reference.html
- * Only the fields we actually emit are modelled here; the rest are typed loosely
- * so that additions don't force structural churn.
+ * Full schema: https://standard.openownership.org/en/0.4.0/standard/reference.html
+ *
+ * In BODS 0.4 every statement has a flat header (statementId, recordId,
+ * recordType, declarationSubject, publicationDetails, source) plus a
+ * `recordDetails` object carrying the type-specific content. The BODS
+ * visualisation library (bods-dagre) expects exactly this shape.
  */
 
-export type StatementType =
-  | "personStatement"
-  | "entityStatement"
-  | "ownershipOrControlStatement";
+export type RecordType = "entity" | "person" | "relationship";
 
 export type EntityTypeValue =
   | "registeredEntity"
@@ -36,7 +36,7 @@ export interface Identifier {
 }
 
 export interface Name {
-  type: "individual" | "alias" | "legalName" | "alternativeName" | "translation";
+  type: "individual" | "alias" | "legal" | "alternativeName" | "translation";
   fullName?: string;
   givenName?: string;
   patronymicName?: string;
@@ -45,11 +45,16 @@ export interface Name {
   language?: string;
 }
 
+export interface Country {
+  name?: string;
+  code?: string;
+}
+
 export interface Address {
   type: "registered" | "business" | "placeOfBirth" | "residence" | "service" | "alternative";
   address?: string;
   postCode?: string;
-  country?: string;
+  country?: Country;
 }
 
 export interface Jurisdiction {
@@ -75,26 +80,54 @@ export interface Source {
   assertedBy?: Array<{ name: string; uri?: string }>;
 }
 
-export interface RecordDetails {
+export interface PublicationDetails {
+  bodsVersion: "0.4";
+  license?: string;
+  publicationDate?: string;
+  publisher: { name: string; url?: string };
+}
+
+interface StatementHeader {
+  statementId: string;
+  declarationSubject: string;
   recordId: string;
-  recordType: StatementType;
   recordStatus?: "new" | "updated" | "closed" | "corrected";
+  statementDate?: string;
+  publicationDetails: PublicationDetails;
+  source?: Source;
+}
+
+/* --- Entity --- */
+
+export interface EntityRecordDetails {
   isComponent?: boolean;
-  componentRecords?: string[];
+  entityType: {
+    type: EntityTypeValue;
+    subtype?: EntitySubtype;
+    details?: string;
+  };
+  name?: string;
+  alternateNames?: string[];
+  identifiers?: Identifier[];
+  jurisdiction?: Jurisdiction;
+  foundingDate?: string;
+  dissolutionDate?: string;
+  addresses?: Address[];
+  uri?: string;
+  publicListing?: { hasPublicListing: boolean };
+}
+
+export interface EntityStatement extends StatementHeader {
+  recordType: "entity";
+  recordDetails: EntityRecordDetails;
 }
 
 /* --- Person --- */
 
-export interface PersonStatement {
-  statementId: string;
-  declarationSubject: string; // statementId of the entity being declared about
-  recordId: string;
-  recordType: "personStatement";
-  recordStatus?: "new" | "updated" | "closed" | "corrected";
-  statementDate?: string;
+export interface PersonRecordDetails {
+  isComponent?: boolean;
   personType: "knownPerson" | "anonymousPerson" | "unknownPerson";
   missingInfoReason?: string;
-  isComponent?: boolean;
   names?: Name[];
   identifiers?: Identifier[];
   nationalities?: Nationality[];
@@ -105,38 +138,14 @@ export interface PersonStatement {
   taxResidencies?: TaxResidency[];
   addresses?: Address[];
   pepStatus?: "isPep" | "isNotPep" | "unknownPep";
-  source?: Source;
 }
 
-/* --- Entity --- */
-
-export interface EntityStatement {
-  statementId: string;
-  declarationSubject: string;
-  recordId: string;
-  recordType: "entityStatement";
-  recordStatus?: "new" | "updated" | "closed" | "corrected";
-  statementDate?: string;
-  entityType: {
-    type: EntityTypeValue;
-    subtype?: EntitySubtype;
-    details?: string;
-  };
-  missingInfoReason?: string;
-  isComponent?: boolean;
-  name?: string;
-  alternateNames?: string[];
-  identifiers?: Identifier[];
-  jurisdiction?: Jurisdiction;
-  foundingDate?: string;
-  dissolutionDate?: string;
-  addresses?: Address[];
-  uri?: string;
-  publicListing?: { hasPublicListing: boolean };
-  source?: Source;
+export interface PersonStatement extends StatementHeader {
+  recordType: "person";
+  recordDetails: PersonRecordDetails;
 }
 
-/* --- Ownership or control --- */
+/* --- Relationship (ownership-or-control) --- */
 
 export type InterestType =
   | "shareholding"
@@ -157,7 +166,7 @@ export type InterestType =
 export type DirectOrIndirect = "direct" | "indirect" | "unknown";
 
 export interface Interest {
-  type: InterestType;
+  type?: InterestType;
   directOrIndirect?: DirectOrIndirect;
   beneficialOwnershipOrControl?: boolean;
   details?: string;
@@ -172,39 +181,19 @@ export interface Interest {
   endDate?: string;
 }
 
-export interface OwnershipOrControlStatement {
-  statementId: string;
-  declarationSubject: string;
-  recordId: string;
-  recordType: "ownershipOrControlStatement";
-  recordStatus?: "new" | "updated" | "closed" | "corrected";
-  statementDate?: string;
-  subject: { describedByEntityStatement: string };
-  interestedParty:
-    | { describedByPersonStatement: string }
-    | { describedByEntityStatement: string }
-    | { unspecified: { reason: string; description?: string } };
-  interests?: Interest[];
+export interface RelationshipRecordDetails {
   isComponent?: boolean;
-  componentStatementIDs?: string[];
-  source?: Source;
+  subject: string;
+  interestedParty: string;
+  interests?: Interest[];
+  componentRecords?: string[];
 }
 
-/* --- Wrapping a BODS 0.4 publication --- */
-
-export type Statement = PersonStatement | EntityStatement | OwnershipOrControlStatement;
-
-export interface PublicationDetails {
-  bodsVersion: "0.4";
-  license?: string;
-  publicationDate?: string;
-  publisher: { name: string; url?: string };
+export interface RelationshipStatement extends StatementHeader {
+  recordType: "relationship";
+  recordDetails: RelationshipRecordDetails;
 }
 
-export interface DeclarationRecord {
-  declarationId: string;
-  statementDate: string;
-  publicationDetails: PublicationDetails;
-  records: Statement[];
-  source?: Source;
-}
+/* --- Union --- */
+
+export type Statement = EntityStatement | PersonStatement | RelationshipStatement;
