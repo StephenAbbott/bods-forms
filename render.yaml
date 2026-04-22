@@ -16,7 +16,6 @@ services:
   - type: web
     name: bods-forms
     runtime: static
-    plan: free
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     pullRequestPreviewsEnabled: true
