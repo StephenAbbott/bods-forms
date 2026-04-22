@@ -1,0 +1,27 @@
+services:
+  validator:
+    build:
+      context: ../bods-validator
+      dockerfile: Dockerfile
+    ports:
+      - "10000:10000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:10000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  forms:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - VALIDATOR_URL=http://validator:10000
+    depends_on:
+      validator:
+        condition: service_healthy
